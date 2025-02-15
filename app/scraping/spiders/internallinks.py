@@ -19,7 +19,6 @@ class InternalLinksSpider(CrawlSpider):
 
     rules = (
         Rule(LinkExtractor(allow=()), callback='parse_item', follow=True),
-        Rule(LinkExtractor(restrict_xpaths="//a[contains(text(),'次へ') or contains(text(),'Next')]"), follow=True),
     )
 
     def parse_item(self, response):
