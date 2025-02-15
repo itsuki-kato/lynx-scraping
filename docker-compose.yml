@@ -1,12 +1,14 @@
 version: "3.9"
 
 services:
-  scrapy:
+  fastapi:
     build:
       context: .
       dockerfile: Dockerfile
-    image: scrapy:2.6.1
-    container_name: my_scrapy
+    container_name: fastapi_scrapy
+    ports:
+      - "8000:8000"
     volumes:
-      - $PWD/app:/usr/src/app
-    tty: true
+      - .:/usr/src/app
+    working_dir: /usr/src/app/app  # Scrapyプロジェクトのルート（scrapy.cfgがあるディレクトリ）
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
