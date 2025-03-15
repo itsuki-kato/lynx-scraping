@@ -1,5 +1,5 @@
 import os
-import subprocess
+import asyncio
 import json
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -13,31 +13,39 @@ class CrawlRequest(BaseModel):
     target_class: str
 
 @app.post("/crawl/")
-def run_scrapy(request: CrawlRequest):
+async def run_scrapy(request: CrawlRequest):
     os.chdir(SCRAPY_PROJECT_PATH)  # Scrapy のプロジェクトディレクトリに移動
 
-    # Scrapy を適切な引数で実行（リアルタイムに標準出力を取得）
-    process = subprocess.Popen(
-        [
-            "scrapy", "crawl", "internallinks",
-            "-a", f"start_url={request.start_url}",
-            "-a", f"target_class={request.target_class}",
-            "-s", "FEED_FORMAT=json",
-            "-s", "FEED_URI=stdout:"
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
-
-    stdout, stderr = process.communicate()  # Scrapy の実行が終わるまで待機
-
-    if process.returncode != 0:
-        raise HTTPException(status_code=500, detail={"stdout": stdout, "stderr": stderr})
+    # Scrapy コマンドの準備
+    cmd = [
+        "scrapy", "crawl", "internallinks",
+        "-a", f"start_url={request.start_url}",
+        "-a", f"target_class={request.target_class}",
+        "-s", "FEED_FORMAT=json",
+        "-s", "FEED_URI=stdout:"
+    ]
 
     try:
-        scraped_data = json.loads(stdout.strip())  # Scrapy の標準出力から JSON データを読み込む
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="Failed to decode JSON from Scrapy output")
+        # 非同期でScrapyを実行
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            text=True
+        )
 
-    return {"scraped_data": scraped_data, "stderr": stderr}
+        # 非同期で出力を待機
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail={"stdout": stdout, "stderr": stderr})
+
+        try:
+            scraped_data = json.loads(stdout.strip())
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=500, detail="Failed to decode JSON from Scrapy output")
+
+        return {"scraped_data": scraped_data, "stderr": stderr}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
