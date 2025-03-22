@@ -31,7 +31,6 @@ async def run_scrapy(request: CrawlRequest):
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            text=True
         )
 
         # 非同期で出力を待機

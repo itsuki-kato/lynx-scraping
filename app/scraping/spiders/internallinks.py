@@ -2,6 +2,8 @@ import scrapy
 from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.http import Request
+import requests
+from urllib.parse import urlparse
 
 
 class InternalLinksSpider(CrawlSpider):
@@ -40,24 +42,62 @@ class InternalLinksSpider(CrawlSpider):
         )
         index_status = "noindex" if "noindex" in robots_meta.lower() else "index"
 
-        # 指定クラス内の内部リンクを取得
-        internal_links = response.xpath(
-            f"//div[contains(@class, '{self.target_class}')]//a/@href"
-        ).getall()
-        internal_links = [response.urljoin(link) for link in internal_links]
+        # 指定クラス内の内部リンクを取得（URLとアンカーテキスト）
+        internal_links = []
+        link_elements = response.xpath(
+            f"//div[contains(@class, '{self.target_class}')]//a"
+        )
+        
+        for link in link_elements:
+            href = link.xpath("@href").get()
+            if href:
+                full_url = response.urljoin(href)
+                anchor_text = link.xpath("string(.)").get().strip()
+                
+                # 同一ドメインかどうかを判定
+                is_same_domain = self.is_same_domain(full_url)
+                
+                # 同一ドメインの場合のみリンク切れチェックを行う
+                is_active = self.check_link_active(full_url) if is_same_domain else True
+                
+                internal_links.append({
+                    "linkUrl": full_url,
+                    "anchorText": anchor_text,
+                    "isActive": is_active
+                })
 
         # 階層構造を持たせた h タグの取得
         headings = self.get_structured_headings(response)
 
         yield {
-            "current_url": current_url,
-            "title": title,
-            "description": description,
-            "index_status": index_status,
-            "internal_links": internal_links,
+            "articleUrl": current_url,
+            "metaTitle": title,
+            "metaDescription": description,
+            "isIndexable": index_status == "index",
+            "internalLinks": internal_links,
             "headings": headings,  # 階層構造の h タグ
         }
 
+    def is_same_domain(self, url):
+        """URLが同一ドメインかどうかを判定する"""
+        try:
+            domain = urlparse(url).netloc
+            return domain in self.allowed_domains
+        except:
+            return False
+            
+    def check_link_active(self, url):
+        """リンクが有効かどうかをチェックする"""
+        try:
+            # HEADリクエストでステータスコードを確認
+            # タイムアウトを設定して応答が遅いサイトでも処理を続行できるようにする
+            response = requests.head(url, timeout=5, allow_redirects=True)
+            # 200番台のステータスコードは成功を意味する
+            return 200 <= response.status_code < 300
+        except:
+            # 例外が発生した場合はリンク切れとみなす
+            return False
+    
     def get_structured_headings(self, response):
         """h1~h4 タグをサイト内の配置に基づいて階層構造で取得"""
         headings = []
