@@ -25,8 +25,8 @@ class InternalLinksSpider(CrawlSpider):
 
     def parse_item(self, response):
         # 指定クラスがページ内に存在するかチェック
-        # if not response.xpath(f"//div[contains(@class, '{self.target_class}')]"):
-        #     return  # クラスがなければスキップ
+        if not response.xpath(f"//*[contains(@class, '{self.target_class}')]"):
+            return  # クラスがなければスキップ
 
         current_url = response.url
         title = response.xpath("//title/text()").get(default="").strip()
@@ -45,7 +45,7 @@ class InternalLinksSpider(CrawlSpider):
         # 指定クラス内の内部リンクを取得（URLとアンカーテキスト）
         internal_links = []
         link_elements = response.xpath(
-            f"//div[contains(@class, '{self.target_class}')]//a"
+            f"//*[contains(@class, '{self.target_class}')]//a"
         )
         
         for link in link_elements:
