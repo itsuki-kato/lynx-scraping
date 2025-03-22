@@ -3,6 +3,7 @@ from scrapy.linkextractors import LinkExtractor
 from scrapy.spiders import CrawlSpider, Rule
 from scrapy.http import Request
 import requests
+import json
 from urllib.parse import urlparse
 
 
@@ -69,6 +70,9 @@ class InternalLinksSpider(CrawlSpider):
         # 階層構造を持たせた h タグの取得
         headings = self.get_structured_headings(response)
 
+        # JSON-LD形式の構造化データを取得
+        jsonld_data = self.extract_jsonld(response)
+
         yield {
             "articleUrl": current_url,
             "metaTitle": title,
@@ -76,6 +80,7 @@ class InternalLinksSpider(CrawlSpider):
             "isIndexable": index_status == "index",
             "internalLinks": internal_links,
             "headings": headings,  # 階層構造の h タグ
+            "jsonLd": jsonld_data  # JSON-LD形式の構造化データ
         }
 
     def is_same_domain(self, url):
@@ -165,3 +170,20 @@ class InternalLinksSpider(CrawlSpider):
             prev_level = level  # 現在のレベルを更新
 
         return headings
+        
+    def extract_jsonld(self, response):
+        """ページからJSON-LD形式の構造化データを抽出する"""
+        # JSON-LDスクリプトタグを検索
+        jsonld_scripts = response.xpath('//script[@type="application/ld+json"]/text()').getall()
+        
+        result = []
+        for script in jsonld_scripts:
+            try:
+                # JSONとして解析
+                data = json.loads(script)
+                result.append(data)
+            except json.JSONDecodeError:
+                # 解析エラーの場合はスキップ
+                continue
+                
+        return result
