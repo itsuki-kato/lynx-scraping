@@ -43,8 +43,9 @@ class InternalLinksSpider(CrawlSpider):
         )
         index_status = "noindex" if "noindex" in robots_meta.lower() else "index"
 
-        # 指定クラス内の内部リンクを取得（URLとアンカーテキスト）
+        # 内部リンクと外部リンクを取得（URLとアンカーテキスト）
         internal_links = []
+        outer_links = []
         link_elements = response.xpath(
             f"//*[contains(@class, '{self.target_class}')]//a"
         )
@@ -55,17 +56,40 @@ class InternalLinksSpider(CrawlSpider):
                 full_url = response.urljoin(href)
                 anchor_text = link.xpath("string(.)").get().strip()
                 
+                # rel属性を取得し、nofollowが含まれているかチェック
+                rel = link.xpath("@rel").get(default="").lower()
+                is_follow = "nofollow" not in rel
+                
                 # 同一ドメインかどうかを判定
                 is_same_domain = self.is_same_domain(full_url)
                 
-                # 同一ドメインの場合はステータス情報を取得、異なるドメインの場合はデフォルト値を設定
-                status_info = self.get_link_status(full_url) if is_same_domain else {"code": -1, "redirectUrl": ""}
+                # 同じ記事内のリンク（アンカーリンク）かどうかを判定
+                is_same_page = self.is_same_page(current_url, full_url)
                 
-                internal_links.append({
-                    "linkUrl": full_url,
-                    "anchorText": anchor_text,
-                    "status": status_info
-                })
+                # 同じ記事内のリンクはスキップ
+                if is_same_page:
+                    continue
+                
+                if is_same_domain:
+                    # 内部リンク（同一ドメイン）の場合
+                    status_info = self.get_link_status(full_url)
+                    internal_links.append({
+                        "linkUrl": full_url,
+                        "anchorText": anchor_text,
+                        "isFollow": is_follow,
+                        "status": status_info
+                    })
+                else:
+                    # 外部リンク（異なるドメイン）の場合
+                    outer_links.append({
+                        "linkUrl": full_url,
+                        "anchorText": anchor_text,
+                        "isFollow": is_follow,
+                        "status": {
+                            "code": 200,  # 固定値
+                            "redirectUrl": ""
+                        }
+                    })
 
         # 階層構造を持たせた h タグの取得
         headings = self.get_structured_headings(response)
@@ -79,6 +103,7 @@ class InternalLinksSpider(CrawlSpider):
             "metaDescription": description,
             "isIndexable": index_status == "index",
             "internalLinks": internal_links,
+            "outerLinks": outer_links,  # 外部リンク情報を追加
             "headings": headings,  # 階層構造の h タグ
             "jsonLd": jsonld_data  # JSON-LD形式の構造化データ
         }
@@ -187,3 +212,17 @@ class InternalLinksSpider(CrawlSpider):
                 continue
                 
         return result
+        
+    def is_same_page(self, url1, url2):
+        """2つのURLが同じページを指しているかどうかを判定する（フラグメント部分を除く）"""
+        try:
+            parsed_url1 = urlparse(url1)
+            parsed_url2 = urlparse(url2)
+            
+            # ドメイン、パス、クエリが同じで、URL2がフラグメント（#）を持っている場合
+            return (parsed_url1.netloc == parsed_url2.netloc and
+                    parsed_url1.path == parsed_url2.path and
+                    parsed_url1.query == parsed_url2.query and
+                    parsed_url2.fragment)  # フラグメントが存在する場合はTrue
+        except:
+            return False
