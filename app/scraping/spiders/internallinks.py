@@ -109,7 +109,8 @@ class InternalLinksSpider(CrawlSpider):
 
         for element in heading_elements:
             tag_name = element.root.tag  # h1, h2, h3, h4 のタグ名
-            text = element.xpath("text()").get("").strip()
+            # string(.)を使用して子要素内のテキストも含めて取得
+            text = element.xpath("string(.)").get("").strip()
             level = int(tag_name[1])  # h1, h2, h3, h4 の数値部分を取得（例: h2 -> 2）
 
             heading_item = {"tag": tag_name, "text": text, "children": []}
