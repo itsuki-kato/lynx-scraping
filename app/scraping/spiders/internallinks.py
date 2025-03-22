@@ -57,13 +57,13 @@ class InternalLinksSpider(CrawlSpider):
                 # 同一ドメインかどうかを判定
                 is_same_domain = self.is_same_domain(full_url)
                 
-                # 同一ドメインの場合のみリンク切れチェックを行う
-                is_active = self.check_link_active(full_url) if is_same_domain else True
+                # 同一ドメインの場合はステータス情報を取得、異なるドメインの場合はデフォルト値を設定
+                status_info = self.get_link_status(full_url) if is_same_domain else {"code": -1, "redirectUrl": ""}
                 
                 internal_links.append({
                     "linkUrl": full_url,
                     "anchorText": anchor_text,
-                    "isActive": is_active
+                    "status": status_info
                 })
 
         # 階層構造を持たせた h タグの取得
@@ -86,17 +86,44 @@ class InternalLinksSpider(CrawlSpider):
         except:
             return False
             
-    def check_link_active(self, url):
-        """リンクが有効かどうかをチェックする"""
+    def get_link_status(self, url):
+        """リンクのHTTPステータスコードとリダイレクト先を取得する"""
         try:
-            # HEADリクエストでステータスコードを確認
-            # タイムアウトを設定して応答が遅いサイトでも処理を続行できるようにする
-            response = requests.head(url, timeout=5, allow_redirects=True)
-            # 200番台のステータスコードは成功を意味する
-            return 200 <= response.status_code < 300
+            # リダイレクトを追跡しないようにする
+            response = requests.head(url, timeout=5, allow_redirects=False)
+            status_code = response.status_code
+            
+            # リダイレクト先URLを取得（存在する場合）
+            redirect_url = response.headers.get('Location', '') if 300 <= status_code < 400 else ''
+            
+            # 相対URLの場合は絶対URLに変換
+            if redirect_url and not redirect_url.startswith(('http://', 'https://')):
+                # URLの基本部分を取得
+                parsed_url = urlparse(url)
+                base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+                
+                # 相対URLが / で始まる場合はドメインルートからの相対パス
+                if redirect_url.startswith('/'):
+                    redirect_url = f"{base_url}{redirect_url}"
+                # そうでない場合は現在のパスからの相対パス
+                else:
+                    # 現在のパスのディレクトリ部分を取得
+                    path_parts = parsed_url.path.split('/')
+                    if len(path_parts) > 1:
+                        path_parts.pop()  # 最後の部分（ファイル名）を削除
+                    current_dir = '/'.join(path_parts)
+                    redirect_url = f"{base_url}{current_dir}/{redirect_url}"
+            
+            return {
+                "code": status_code,
+                "redirectUrl": redirect_url
+            }
         except:
-            # 例外が発生した場合はリンク切れとみなす
-            return False
+            # 例外が発生した場合は0を返す（接続エラーなど）
+            return {
+                "code": 0,
+                "redirectUrl": ""
+            }
     
     def get_structured_headings(self, response):
         """h1~h4 タグをサイト内の配置に基づいて階層構造で取得"""
